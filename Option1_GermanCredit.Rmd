@@ -1,0 +1,102 @@
+---
+title: "Option1_GermanCredit"
+author: "Daran Thach"
+date: "2/14/2021"
+output: word_document
+---
+In this project, we describe some data from observations of 1000 applicants for credit worthiness in Germany.  30 variables are given, with ratings of "good credit" or "bad credit."  The predictor variables will be evaluated for their ability to predict good or bad credit risk.  We analyze which of the variables are the best predictors of "good credit."
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# exploratory functions.  Proceed with five to describe the data.
+german.df <- read.csv("GermanCredit.csv")
+# extract number of predicted good/bad cases
+length(german.df$RESPONSE)
+# check to see if n/a values exist in predicted cases
+sum(!is.na(german.df$RESPONSE))
+# all are integer values which are read. Check the outputs and type of data for each variable category
+str(german.df)
+# check variable type for outcome variable 'RESPONSE.'
+class(german.df$RESPONSE)
+
+```
+
+
+
+```{r}
+library(forecast)
+set.seed(2)
+
+# address overfitting issue by partitioning the data
+train.german <- sample(c(1:dim(german.df)[1]), dim(german.df)[1]*0.6)
+train.df <- german.df[train.german, ]
+valid.df <- german.df[-train.german, ]
+
+#run logistic regression model, using glm w/family = binomial
+log.german <- glm(RESPONSE ~., data=train.df, family = binomial)
+options (scipen=999)
+summary (log.german)
+
+#evaluate classification performance; use predict () with type = response to
+#compute probabilities
+log.german.pred <- predict(log.german, valid.df, type="response")
+data.frame(actual = valid.df$RESPONSE[1:5], predicted = log.german.pred[1:5])
+
+#evaluate classification performance; create lift, decile wise lift chart
+library(gains)
+gain <- gains(valid.df$RESPONSE, log.german.pred, groups=length(log.german.pred))
+#plot lift chart
+plot(c(0, gain$cume.pct.of.total*sum(valid.df$RESPONSE)) ~ c(0, gain$cume.obs),
+     xlab ="# cases", ylab = "Cumulative", main ="")
+lines(c(0, sum(valid.df$RESPONSE)) ~ c(0, dim(valid.df)[1]), lty=2)
+
+#compute deciles and plot decile-wise chart
+height <- gain$mean.resp/mean(valid.df$RESPONSE)
+midpt <- barplot(height, names.arg = gain$depth, ylim= c(0,2), 
+                 xlab= "Percentile", ylab= "Main Response", 
+                 main= "Decile wise lift chart")
+
+# create confusion matrix to accurately find true positives and true negatives
+log.german.pred2 <- predict(log.german, valid.df)
+library(caret)
+tab.cf <- table(log.german.pred > 0.5, valid.df$RESPONSE)
+tab.cf
+# determine accuracy of confusion matrix (true positives/all positive & negative)
+sum(diag(tab.cf))/sum(tab.cf)
+```
+
+After we ran logistic regression and evaluated its performance, let's run another classification predictor using CART (classification and regression trees).
+
+```{r}
+# classification tree, using partitioned data above
+library(rpart)
+library(rpart.plot)
+german.ct <- rpart(RESPONSE ~ ., data = train.df, method = "class")
+# plot classification tree
+prp(german.ct, type = 1, extra = 1, under = TRUE, split.font = 1, varlen = -10)
+# run the confusion matrix for the above ct
+## run the matrix for training, then validation data
+## set argument type = 'class' to generate predicted class membership
+german.ct.pred.train <- predict(german.ct, train.df, type = "class")
+german.ct.pred.valid <- predict(german.ct, valid.df, type = "class")
+
+# default tree using training
+library(caret)
+# confusionMatrix(german.ct.pred.train, train.df$RESPONSE) gives error: 'data'
+## and 'reference' should be factors w/same levels
+## use table function to generate matrix
+tab.cm <- table(german.ct.pred.train, train.df$RESPONSE)
+tab.cm
+# determine accuracy of training confusion matrix (true positives/all positive & negative)
+sum(diag(tab.cm))/sum(tab.cm)
+# Accuracy of training CART = 0.823
+# repeat matrix for validation data
+tab.cmv <- table(german.ct.pred.valid, valid.df$RESPONSE)
+tab.cmv
+# determine accuracy of validation confusion matrix (TP/TP+FP)
+sum(diag(tab.cmv))/sum(tab.cmv)
+# Accuracy of validation CART = 0.695
+Sys.time()
+```
+
+END OF RCODE using Rstudio. Daran Thach
